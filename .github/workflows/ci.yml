@@ -22,20 +22,25 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: 回归测试
+      - name: Regression tests
         run: python tests/test_regressions.py
 
-      - name: 冒烟渲染(中文路径;HOME 隔离仅 POSIX 生效,Windows 的 Python 用 USERPROFILE,runner 即用即弃无害)
+      - name: Quota-only smoke render
         env:
           KIMI_SL_NOCOLOR: '1'
           HOME: ${{ runner.temp }}/home
+          KIMI_CODE_HOME: ${{ runner.temp }}/kc
         run: |
-          mkdir -p "$HOME"
-          out=$(echo '{"model":"K3","cwd":"D:/用户/项目","gitBranch":"main","permissionMode":"auto","planMode":false,"contextUsage":0.1,"contextTokens":1000,"maxContextTokens":1048576,"sessionId":"","version":"ci"}' | python statusline.py)
+          mkdir -p "$HOME" "$KIMI_CODE_HOME"
+          out=$(echo '{"model":"hidden","cwd":"D:/пользователь/проект","gitBranch":"hidden","permissionMode":"auto","sessionId":"","version":"ci"}' | python statusline.py)
           test -n "$out"
+          echo "$out" | grep -q '5h'
+          echo "$out" | grep -q '7d'
+          ! echo "$out" | grep -q 'hidden'
+          ! echo "$out" | grep -q 'mo'
           echo "$out"
 
-      - name: 安装/卸载往返(临时 KIMI_CODE_HOME)
+      - name: Install/uninstall roundtrip
         env:
           KIMI_CODE_HOME: ${{ runner.temp }}/kc
         run: |
@@ -44,8 +49,10 @@ jobs:
           python install.py
           python uninstall.py
           ! grep -q 'statusline\.py' "$KIMI_CODE_HOME/tui.toml"
+          test ! -e "$KIMI_CODE_HOME/statusline-quota.json"
+          test ! -e "$KIMI_CODE_HOME/statusline-quota-refresh.lock"
 
-      - name: Windows 真机路径压测(真实 Node spawn 复刻 TUI 的 cmd /d /s /c + detached 不闪窗 + UTF-8)
+      - name: Windows isolated E2E
         if: runner.os == 'Windows'
         shell: pwsh
         run: pwsh -File ./tests/windows-e2e.ps1

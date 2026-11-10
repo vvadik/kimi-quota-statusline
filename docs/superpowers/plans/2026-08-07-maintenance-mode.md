@@ -1,33 +1,35 @@
-# 守成式维护(v1.1.1 发布 + 巡检清单)实施计划
+# План консервативного сопровождения (релиз v1.1.1 и чек-лист совместимости)
 
+> Исторический план версии 1.1.1. Команды, функции и runtime-файлы относятся к той версии, а не к quota-only 2.0.0.
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 发布 v1.1.1(存量修复:消耗段改按会话统计、UA 动态化),并把 CLI 更新后的兼容性巡检清单固化进 MAINTAINING.md。
+**Goal:** опубликовать v1.1.1 (накопленные исправления: расход по сессии и динамический UA) и зафиксировать чек-лист совместимости после обновлений CLI в MAINTAINING.md.
 
-**Architecture:** 纯发布与文档操作,无新代码。工作区改动已齐备并实测通过,只需验证 → 版本落定 → 文档补节 → 推送打 tag。
+**Architecture:** только релизные и документальные операции, новый код не требуется. Изменения рабочего дерева уже подготовлены и проверены: проверка → фиксация версии → дополнение документации → push и tag.
 
-**Tech Stack:** Python 3(零依赖)、git/GitHub(`gh` 已登录)、Keep a Changelog。
+**Tech Stack:** Python 3 без зависимостей, git/GitHub (`gh` уже авторизован), Keep a Changelog.
 
 ## Global Constraints
 
-- 仓库:`https://github.com/3209621-dotcom/kimi-quota-statusline`,分支 `main`。
-- 发布流程遵循 `docs/MAINTAINING.md` 第六节;提交信息沿用仓库风格(类型前缀 + 中文描述,如 `docs:`、`perf:`、`feat:`)。
-- README 双语同步规则:任何行为变化必须 `README.md` / `README.zh-CN.md` 同步;本次两个文件的同步改动已在工作区,只需核对,不再新增内容。
-- 版本号:`kimi.plugin.json` 的 `version` 由 `1.1.0` → `1.1.1`;tag 名 `v1.1.1`。
-- 日期统一用 `2026-08-07`。
+- Репозиторий: `https://github.com/3209621-dotcom/kimi-quota-statusline`, ветка `main`.
+- Публикация следует разделу 6 `docs/MAINTAINING.md` той версии; сообщения commit используют префикс типа и русское описание (`docs:`, `perf:`, `feat:`).
+- Правило двуязычного README: любое изменение поведения синхронизируется в `README.md` и языковой версии README; соответствующие изменения уже есть в рабочем дереве и требуют только проверки.
+- Версия в `kimi.plugin.json`: `1.1.0` → `1.1.1`; tag `v1.1.1`.
+- Везде используется дата `2026-08-07`.
 
 ---
 
-### Task 1: 发布前验证(工作区改动实测门禁)
+### Task 1: проверка перед публикацией
 
 **Files:**
-- 无改动;只验证 `statusline.py` 工作区版本。
+- Файлы не изменяются; проверяется рабочая версия `statusline.py`.
 
 **Interfaces:**
-- Consumes: 工作区全部未提交改动(`statusline.py`、`CHANGELOG.md`、`README.md`、`README.zh-CN.md`)。
-- Produces: 验证通过结论,作为 Task 2 提交的前提。
+- Consumes: все незакоммиченные изменения (`statusline.py`, `CHANGELOG.md`, оба README).
+- Produces: подтверждение проверки, обязательное для Task 2.
 
-- [ ] **Step 1: 手动渲染测试(彩色 + 纯文本两条)**
+- [ ] **Step 1: ручной рендеринг в цветном и текстовом режимах**
 
 ```bash
 cd /Users/guo/Projects/kimi-quota-statusline
@@ -35,17 +37,17 @@ cat ~/.kimi-code/statusline-stdin.json | python3 statusline.py
 cat ~/.kimi-code/statusline-stdin.json | KIMI_SL_NOCOLOR=1 python3 statusline.py
 ```
 
-Expected: 两条都输出单行状态栏,含权限/模型/5h/7d/会话 token 金额段,无 traceback。
+Expected: обе команды выводят одну строку с permission/моделью/5h/7d/token и стоимостью сессии, без traceback.
 
-- [ ] **Step 2: 运行耗时必须远小于 300ms**
+- [ ] **Step 2: время выполнения значительно меньше 300 мс**
 
 ```bash
 time (cat ~/.kimi-code/statusline-stdin.json | python3 statusline.py > /dev/null)
 ```
 
-Expected: real 时间 < 0.3s(正常应 <0.1s)。
+Expected: real < 0,3 с (обычно < 0,1 с).
 
-- [ ] **Step 3: 官方额度接口 + 动态 UA 实测**
+- [ ] **Step 3: официальный quota API и динамический UA**
 
 ```bash
 python3 -c "
@@ -56,124 +58,122 @@ print('OK', d.get('wk_used'), '/', d.get('wk_limit'))
 "
 ```
 
-Expected: 打印 `OK <used> / <limit>`(token 需在 15 分钟有效期内,CLI 运行中即有效;若失败先确认 `~/.kimi-code/credentials/kimi-code.json` 的 `expires_at` 未过期再重试)。
+Expected: `OK <used> / <limit>`. Token должен быть действителен (в той версии — 15 минут при работающем CLI); при ошибке сначала проверить `expires_at` в `~/.kimi-code/credentials/kimi-code.json`.
 
-### Task 2: 版本落定并提交 v1.1.1
+### Task 2: фиксация версии и commit v1.1.1
 
 **Files:**
-- Modify: `kimi.plugin.json`(第 3 行 `"version": "1.1.0"` → `"1.1.1"`)
-- Modify: `CHANGELOG.md`(Unreleased 两条落定到 `## [1.1.1] - 2026-08-07`)
-- 一并提交: `statusline.py`、`README.md`、`README.zh-CN.md`(工作区已有改动)
+- Modify: `kimi.plugin.json` (`"version": "1.1.0"` → `"1.1.1"`).
+- Modify: `CHANGELOG.md` (два пункта Unreleased переносятся в `## [1.1.1] - 2026-08-07`).
+- Также включить: `statusline.py` и оба README.
 
 **Interfaces:**
-- Consumes: Task 1 的验证通过结论。
-- Produces: 本地 commit,`kimi.plugin.json` version = `1.1.1`;供 Task 4 推送。
+- Consumes: результат Task 1.
+- Produces: локальный commit с version `1.1.1`, готовый к push в Task 4.
 
-- [ ] **Step 1: 改 `kimi.plugin.json` 版本号**
+- [ ] **Step 1: изменить версию manifest**
 
 `"version": "1.1.0"` → `"version": "1.1.1"`
 
-- [ ] **Step 2: 改 `CHANGELOG.md`**
+- [ ] **Step 2: обновить CHANGELOG**
 
-把 `## [Unreleased]` 下整个 `### Changed` 块(两条)移到新标题下:
+Перенести блок `### Changed` из `## [Unreleased]` под новый заголовок:
 
 ```markdown
 ## [1.1.1] - 2026-08-07
 
 ### Changed
-- 消耗段由"今日"(全部会话当日聚合)改为"会话":token 与金额只统计当前会话的 wire.jsonl,不再跨会话总计
-- 拉取官方额度接口的 User-Agent 版本号改为透传 CLI 快照的 `version` 字段,不再写死
+- Расход рассчитывается по текущей сессии, а не по всем сессиям за день
+- Версия User-Agent для официального API берётся из поля version снимка CLI
 ```
 
-`## [Unreleased]` 标题保留,其下清空。
+Заголовок `## [Unreleased]` остаётся пустым.
 
-- [ ] **Step 3: 核对 README 双语同步无遗漏**
+- [ ] **Step 3: проверить синхронность README**
 
 ```bash
-git diff README.md | grep -c "^+.*Today's"        # 新增行残留旧文案数,期望 0
-git diff README.zh-CN.md | grep -c '^+.*今日'      # 新增行残留旧文案数,期望 0
+git diff README.md | grep -c "^+.*Today's"        # число устаревших новых строк, ожидается 0
+git diff README.ru-RU.md | grep -c '^+.*за день'   # проверка русской формулировки
 ```
 
-Expected: 两个 README 的 diff 均为"今日→会话 / Today's→Current session"的成对同步改动,新增行无旧文案残留。如发现遗漏,补同步后再继续。
+Expected: изменения «за день → текущая сессия / Today's → Current session» синхронны, старого текста в добавленных строках нет. Любое расхождение исправить до продолжения.
 
-- [ ] **Step 4: 提交**
+- [ ] **Step 4: создать commit**
 
 ```bash
-git add statusline.py CHANGELOG.md README.md README.zh-CN.md kimi.plugin.json
-git commit -m "chore(release): v1.1.1 — 消耗段改按会话统计,UA 版本动态化"
+git add statusline.py CHANGELOG.md README.md README.ru-RU.md kimi.plugin.json
+git commit -m "chore(release): v1.1.1 — расход по сессии и динамическая версия UA"
 ```
 
-Expected: `git status --short` 干净;`git log --oneline -1` 显示该提交。
+Expected: `git status --short` чистый; `git log --oneline -1` показывает созданный commit.
 
-### Task 3: MAINTAINING.md 新增巡检清单节
+### Task 3: добавить чек-лист в MAINTAINING.md
 
 **Files:**
-- Modify: `docs/MAINTAINING.md`(插入新「七、CLI 更新后的兼容性巡检」,原七/八节顺延为八/九)
+- Modify: `docs/MAINTAINING.md` (новый раздел «Проверка совместимости после обновления CLI», последующие разделы перенумерованы).
 
 **Interfaces:**
-- Consumes: 无(与 Task 2 独立,但提交顺序在后)。
-- Produces: 本地 commit,维护文档含巡检清单。
+- Consumes: не зависит от Task 2, но коммитится после него.
+- Produces: локальный commit с чек-листом сопровождения.
 
-- [ ] **Step 1: 在 `## 六、发布流程` 之后、`## 七、已知的坑(别再踩)` 之前插入新节,并把后两节标题改为八、九**
+- [ ] **Step 1: вставить новый раздел после публикации и перенумеровать следующие**
 
-插入内容:
+Вставить:
 
 ```markdown
-## 七、CLI 更新后的兼容性巡检
+## Проверка совместимости после обновления CLI
 
-Kimi Code 升级后(尤其跨 minor 版本),按本清单逐项核对;全部通过则无需改动,有失败项按「三、数据通道」定位修复。最近基线:CLI 0.31.1(2026-08-07 全部通过)。
+После обновления Kimi Code (особенно minor) выполнить все пункты. Если всё проходит, код менять не нужно; иначе использовать раздел о каналах данных. Последняя база: CLI 0.31.1 (2026-08-07, все проверки пройдены).
 
-1. **官方 changelog 对照**:https://www.kimi.com/code/docs/en/kimi-code-cli/release-notes/changelog.html ,搜 status_line / plugin / wire / usages 相关条目。
-2. **stdin 快照字段**:`cat ~/.kimi-code/statusline-stdin.json` —— 应含 `model, cwd, gitBranch, permissionMode, planMode, contextUsage, contextTokens, maxContextTokens, sessionId, version`。
-3. **wire 记录存在性**:对当前会话 `~/.kimi-code/sessions/*/<sessionId>/agents/main/wire.jsonl` 分别 `grep -c` `usage.record` / `thinkingEffort` / `swarm_mode`,均应 >0。
-4. **官方额度接口**:`python3 -c "import statusline; print(statusline.fetch_official())"` 应返回含 `wk_limit` 的 dict(token 过期时返回 None,属预期回退,先确认 CLI 在线再判失败)。
-5. **配置校验**:`kimi doctor tui`。
-6. **手动渲染 + 计时**:`cat ~/.kimi-code/statusline-stdin.json | python3 statusline.py` 单行无报错;`time` 实测远小于 300ms。
+1. Сопоставить официальный changelog: https://www.kimi.com/code/docs/en/kimi-code-cli/release-notes/changelog.html — status_line / plugin / wire / usages.
+2. Проверить поля stdin: `cat ~/.kimi-code/statusline-stdin.json` — model, cwd, gitBranch, permissionMode, planMode, contextUsage, contextTokens, maxContextTokens, sessionId, version.
+3. Проверить wire-записи текущей сессии: usage.record / thinkingEffort / swarm_mode, для каждой grep -c должен быть >0.
+4. Проверить quota API: `python3 -c "import statusline; print(statusline.fetch_official())"` должен вернуть dict с wk_limit. Истёкший token даёт None; сначала убедиться, что CLI работает.
+5. Выполнить `kimi doctor tui`.
+6. Выполнить ручной рендеринг и измерить время; одна строка без ошибок, значительно меньше 300 мс.
 ```
 
-同时:
-- `## 七、已知的坑(别再踩)` → `## 八、已知的坑(别再踩)`
-- `## 八、路线图(想法池)` → `## 九、路线图(想法池)`
+Также обновить номера последующих разделов и ссылки на них.
 
-- [ ] **Step 2: 核对全文无悬挂引用**
+- [ ] **Step 2: проверить заголовки**
 
 ```bash
 grep -n '^## ' docs/MAINTAINING.md
 ```
 
-Expected: 一到九节顺序正确,无重复编号。
+Expected: правильный порядок разделов без повторяющихся номеров и висячих ссылок.
 
-- [ ] **Step 3: 提交**
+- [ ] **Step 3: создать commit**
 
 ```bash
 git add docs/MAINTAINING.md
-git commit -m "docs: MAINTAINING 增加 CLI 更新兼容性巡检清单"
+git commit -m "docs: добавить чек-лист совместимости после обновления CLI"
 ```
 
-### Task 4: 推送、打 tag、远端验证
+### Task 4: push, tag и удалённая проверка
 
 **Files:**
-- 无文件改动;git 远端操作。
+- Файлы не изменяются; только git remote.
 
 **Interfaces:**
-- Consumes: Task 2、Task 3 的本地 commit,以及之前已提交的 spec commit(`ca3d417`)。
-- Produces: origin/main 最新;tag `v1.1.1` 在 GitHub 可见。
+- Consumes: commit из Task 2 и Task 3, а также ранее созданный spec commit `ca3d417`.
+- Produces: актуальный origin/main и видимый на GitHub tag `v1.1.1`.
 
-- [ ] **Step 1: 推送 main**
+- [ ] **Step 1: опубликовать main**
 
 ```bash
 git push origin main
 ```
 
-Expected: 推送成功,无 non-fast-forward。
+Expected: успешный push без non-fast-forward.
 
-- [ ] **Step 2: 打 tag 并推送**
+- [ ] **Step 2: создать и опубликовать tag**
 
 ```bash
 git tag v1.1.1 && git push origin v1.1.1
 ```
 
-- [ ] **Step 3: 远端验证**
+- [ ] **Step 3: проверить удалённый репозиторий**
 
 ```bash
 gh api repos/3209621-dotcom/kimi-quota-statusline --jq '.pushed_at'
@@ -181,12 +181,12 @@ gh api repos/3209621-dotcom/kimi-quota-statusline/tags --jq '.[].name'
 git tag --list 'v1.1.1'
 ```
 
-Expected: `pushed_at` 为当前时间;tags 含 `v1.1.1`。
+Expected: `pushed_at` соответствует текущему времени, среди tags есть `v1.1.1`.
 
-- [ ] **Step 4: 最终核对**
+- [ ] **Step 4: финальная проверка**
 
 ```bash
 git status --short && git log --oneline -4
 ```
 
-Expected: 工作区干净;最近提交依次为 tag 指向的 v1.1.1 相关提交。
+Expected: рабочее дерево чистое, последние commit относятся к релизу v1.1.1 и tag указывает на соответствующий commit.
