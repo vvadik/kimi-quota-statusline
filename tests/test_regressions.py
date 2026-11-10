@@ -83,23 +83,26 @@ class StatuslineCase(unittest.TestCase):
                     f'key = "{oauth_key}"\n')
 
     def cache(self, **updates):
-        value = {'version': 1, 'environment': self.env['key'],
+        value = {'version': statusline.CACHE_VERSION, 'environment': self.env['key'],
                  'attempt_at': time.time(), 'fetched_at': time.time()}
         value.update(updates)
         return value
 
 
 class QuotaParsingTests(StatuslineCase):
-    def test_modern_windows_and_monthly_ignored(self):
+    def test_modern_windows_and_monthly_total(self):
         quota = statusline.parse_quota({'usages': {
             'limit_5h': {'used_ratio': 0.15, 'reset_time': 'h'},
             'limit_7d': {'used_ratio': '0.81', 'reset_time': 'w'},
             'limit_month_total': {'used_ratio': 0.99, 'reset_time': 'm'},
+            'limit_month_code': {'used_ratio': 0.01, 'reset_time': 'code'},
         }})
         self.assertEqual(quota['h5_used'], 0.15)
         self.assertEqual(quota['wk_used'], 0.81)
         self.assertEqual(quota['h5_reset'], 'h')
-        self.assertNotIn('mo_used', quota)
+        self.assertEqual(quota['mo_used'], 0.99)
+        self.assertEqual(quota['mo_reset'], 'm')
+        self.assertNotIn('code_used', quota)
 
     def test_legacy_fallback_is_independent(self):
         quota = statusline.parse_quota({
@@ -121,7 +124,7 @@ class QuotaParsingTests(StatuslineCase):
             self.assertEqual(quota['wk_used'], 0.25)
 
     def test_no_valid_window_returns_none(self):
-        self.assertIsNone(statusline.parse_quota({'usages': {'limit_month_total': {'used_ratio': 0.5}}}))
+        self.assertIsNone(statusline.parse_quota({'usages': {'limit_month_code': {'used_ratio': 0.5}}}))
         self.assertIsNone(statusline.parse_quota([]))
 
     def test_overuse_keeps_actual_percentage(self):
@@ -131,7 +134,7 @@ class QuotaParsingTests(StatuslineCase):
 
 
 class RenderTests(StatuslineCase):
-    def test_only_5h_and_7d_are_rendered(self):
+    def test_weekly_is_preferred_over_monthly(self):
         cache = self.cache(h5_used=15, h5_limit=100, wk_used=80, wk_limit=100,
                            h5_reset='2099-01-01T00:00:00Z', mo_used=0.9, mo_limit=1)
         rendered = statusline.render_quota(cache, self.env)
@@ -143,12 +146,19 @@ class RenderTests(StatuslineCase):
         self.assertNotIn('90%', rendered)
         self.assertNotIn('git', rendered)
 
+    def test_monthly_is_fallback_when_weekly_is_missing(self):
+        cache = self.cache(h5_used=0.15, h5_limit=1, mo_used=0.1002, mo_limit=1)
+        rendered = statusline.render_quota(cache, self.env)
+        self.assertIn('mo', rendered)
+        self.assertIn('10%', rendered)
+        self.assertNotIn('7d', rendered)
+
     def test_placeholders_and_environment_isolation(self):
         rendered = statusline.render_quota(self.cache(), self.env)
-        self.assertEqual(rendered, '5h — · 7d —')
+        self.assertEqual(rendered, '5h — | 7d —')
         other = dict(self.env, key='other-environment')
         self.assertEqual(statusline.render_quota(self.cache(h5_used=1, h5_limit=1), other),
-                         '5h — · 7d —')
+                         '5h — | 7d —')
 
     def test_stale_marker(self):
         cache = self.cache(fetched_at=time.time() - 601, h5_used=0.5, h5_limit=1)
@@ -160,10 +170,15 @@ class RenderTests(StatuslineCase):
         self.assertEqual(statusline.reset_hint(reset, now), '3d0h')
         self.assertEqual(statusline.reset_hint('bad', now), '')
 
-    def test_main_does_not_persist_or_echo_stdin(self):
+    def test_native_snapshot_format(self):
+        snapshot = {'model': 'K3.1 Pro', 'contextTokens': 178100, 'maxContextTokens': 1048576}
+        self.assertEqual(statusline.render_snapshot(snapshot),
+                         'K3.1 Pro | ctx:83% left | win:1.0m | used:178.1k')
+
+    def test_main_preserves_native_segments_without_persisting_stdin(self):
         old_stdin = sys.stdin
         sys.stdin = io.StringIO(json.dumps({'version': 'test', 'cwd': '/tmp/\x1b]52;c;U1VDQ0VTUw==\x07',
-                                            'gitBranch': 'main', 'model': 'secret-model'}))
+                                            'gitBranch': 'main', 'model': 'K3.1 Pro'}))
         old_refresh = statusline.maybe_refresh
         statusline.maybe_refresh = lambda *args: False
         output = io.StringIO()
@@ -173,8 +188,8 @@ class RenderTests(StatuslineCase):
         finally:
             sys.stdin = old_stdin
             statusline.maybe_refresh = old_refresh
-        self.assertEqual(output.getvalue().strip(), '5h — · 7d —')
-        self.assertNotIn('secret-model', output.getvalue())
+        self.assertEqual(output.getvalue().strip(), 'K3.1 Pro | 5h — | 7d —')
+        self.assertNotIn('main', output.getvalue())
         self.assertNotIn(']52', output.getvalue())
         self.assertFalse(os.path.exists(os.path.join(statusline.HOME, 'statusline-stdin.json')))
 
@@ -413,7 +428,7 @@ class InstallerTests(unittest.TestCase):
         path = os.path.join(os.path.dirname(__file__), '..', 'kimi.plugin.json')
         with open(path, encoding='utf-8') as f:
             manifest = json.load(f)
-        self.assertEqual(manifest['version'], '2.0.0')
+        self.assertEqual(manifest['version'], '2.1.0')
         self.assertNotIn('hooks', manifest)
 
 

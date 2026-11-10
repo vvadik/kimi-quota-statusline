@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Kimi TUI status line with official 5h and 7d quotas only."""
+"""Штатные model/context сегменты Kimi TUI и официальные квоты 5h/7d/mo."""
 
 import json
 import math
@@ -31,6 +31,7 @@ LOCK_S = 60
 REQUEST_TIMEOUT_S = 8
 MAX_RESPONSE_BYTES = 1024 * 1024
 OAUTH_KEY_RE = re.compile(r'^oauth/(kimi-code(?:-env-[0-9a-f]{16})?)$')
+CACHE_VERSION = 2
 
 USE_ANSI = os.environ.get('KIMI_SL_NOCOLOR') != '1'
 RESET, BOLD, DIM = '\033[0m', '\033[1m', '\033[2m'
@@ -140,6 +141,7 @@ def parse_quota(payload):
     if isinstance(usages, dict):
         add_quota('h5', usages.get('limit_5h'), modern=True)
         add_quota('wk', usages.get('limit_7d'), modern=True)
+        add_quota('mo', usages.get('limit_month_total'), modern=True)
     return out or None
 
 
@@ -183,7 +185,7 @@ def read_cache():
 
 def empty_cache(environment, now):
     return {
-        'version': 1,
+        'version': CACHE_VERSION,
         'environment': environment['key'] if environment else 'invalid',
         'attempt_at': now,
         'fetched_at': 0,
@@ -217,9 +219,10 @@ def refresh_cache(ver=''):
     if quota is not None:
         cache['fetched_at'] = now
         cache.update(quota)
-    elif previous.get('environment') == env_key:
+    elif previous.get('version') == CACHE_VERSION and previous.get('environment') == env_key:
         cache['fetched_at'] = previous.get('fetched_at', 0)
-        for key in ('h5_used', 'h5_limit', 'h5_reset', 'wk_used', 'wk_limit', 'wk_reset'):
+        for key in ('h5_used', 'h5_limit', 'h5_reset', 'wk_used', 'wk_limit', 'wk_reset',
+                    'mo_used', 'mo_limit', 'mo_reset'):
             if key in previous:
                 cache[key] = previous[key]
     write_cache(cache)
@@ -269,7 +272,8 @@ def release_lock(token):
 def maybe_refresh(cache, environment, ver=''):
     now = time.time()
     env_key = environment['key'] if environment else 'invalid'
-    attempt_at = cache.get('attempt_at', 0) if cache.get('environment') == env_key else 0
+    matches = cache.get('version') == CACHE_VERSION and cache.get('environment') == env_key
+    attempt_at = cache.get('attempt_at', 0) if matches else 0
     try:
         due = now - float(attempt_at) >= REFRESH_INTERVAL_S
     except (TypeError, ValueError, OverflowError):
@@ -341,14 +345,65 @@ def quota_segment(label, prefix, cache, stale, now):
 def render_quota(cache, environment, now=None):
     now = time.time() if now is None else now
     env_key = environment['key'] if environment else 'invalid'
-    if cache.get('environment') != env_key:
+    matches = cache.get('version') == CACHE_VERSION and cache.get('environment') == env_key
+    if not matches:
         cache = {}
     try:
         stale = now - float(cache.get('fetched_at', 0)) > STALE_AFTER_S
     except (TypeError, ValueError, OverflowError):
         stale = True
-    return (quota_segment('5h', 'h5', cache, stale, now) + c(' · ', DIM)
-            + quota_segment('7d', 'wk', cache, stale, now))
+    if cache.get('wk_limit'):
+        label, prefix = '7d', 'wk'
+    elif cache.get('mo_limit'):
+        label, prefix = 'mo', 'mo'
+    else:
+        label, prefix = '7d', 'wk'
+    return (quota_segment('5h', 'h5', cache, stale, now) + ' | '
+            + quota_segment(label, prefix, cache, stale, now))
+
+
+def finite_number(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def render_snapshot(snapshot):
+    model = snapshot.get('model') or 'unknown'
+    if isinstance(model, dict):
+        model = model.get('alias') or model.get('id') or model.get('name') or 'unknown'
+    model = ''.join(ch for ch in str(model) if ch.isprintable())[:80] or 'unknown'
+    parts = [model]
+    max_tokens = finite_number(snapshot.get('maxContextTokens'))
+    used_tokens = finite_number(snapshot.get('contextTokens'))
+    usage = finite_number(snapshot.get('contextUsage'))
+    remaining = None
+    if max_tokens is not None and max_tokens > 0 and used_tokens is not None:
+        remaining = 100 - used_tokens * 100 / max_tokens
+    elif usage is not None:
+        remaining = 100 - usage * 100
+    if remaining is not None:
+        parts.append(f'ctx:{remaining:.0f}% left')
+    if max_tokens is not None and max_tokens > 0:
+        if max_tokens >= 1000000:
+            parts.append(f'win:{max_tokens / 1000000:.1f}m')
+        else:
+            parts.append(f'win:{max_tokens / 1000:.0f}k')
+    if used_tokens is not None and used_tokens > 0:
+        if used_tokens >= 1000:
+            parts.append(f'used:{used_tokens / 1000:.1f}k')
+        else:
+            parts.append(f'used:{int(used_tokens)}')
+    return ' | '.join(parts)
+
+
+def render_status(cache, environment, snapshot, now=None):
+    native = render_snapshot(snapshot)
+    return native + ' | ' + render_quota(cache, environment, now)
 
 
 def main():
@@ -360,12 +415,14 @@ def main():
         raw = sys.stdin.read()
     try:
         snapshot = json.loads(raw) if raw.strip() else {}
+        if not isinstance(snapshot, dict):
+            snapshot = {}
     except ValueError:
         snapshot = {}
     environment = resolve_environment()
     cache = read_cache()
     maybe_refresh(cache, environment, str(snapshot.get('version') or ''))
-    print(render_quota(cache, environment))
+    print(render_status(cache, environment, snapshot))
 
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Установка quota-only статусной строки с резервной копией tui.toml."""
+"""Установка статусной строки model/context и квот с резервной копией tui.toml."""
 import json
 import os
 import re

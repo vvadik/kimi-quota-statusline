@@ -16,13 +16,13 @@ New-Item -ItemType Directory -Force -Path $env:KIMI_CODE_HOME | Out-Null
 try {
     $py = (Get-Command python -ErrorAction Stop).Source
     $statusline = Join-Path (Split-Path -Parent $PSScriptRoot) 'statusline.py'
-    $payload = '{"model":"hidden","cwd":"C:/пользователь/мой проект","gitBranch":"hidden","permissionMode":"auto","sessionId":"","version":"e2e"}'
+    $payload = '{"model":"K3.1 Pro","cwd":"C:/пользователь/мой проект","gitBranch":"hidden","permissionMode":"auto","sessionId":"","version":"e2e"}'
     $out = $payload | & $py $statusline
-    if ($LASTEXITCODE -ne 0 -or $out -notlike '*5h*' -or $out -notlike '*7d*' -or
-        $out -like '*hidden*' -or $out -like '*mo*') {
+    if ($LASTEXITCODE -ne 0 -or $out -notlike '*K3.1 Pro*' -or $out -notlike '*5h*' -or
+        $out -notlike '*7d*' -or $out -like '*hidden*') {
         throw "Unexpected status line: $out"
     }
-    Write-Host "PASS quota-only UTF-8 render: $out"
+    Write-Host "PASS native status and quota UTF-8 render: $out"
 
     $cache = Join-Path $env:KIMI_CODE_HOME 'statusline-quota.json'
     $lock = Join-Path $env:KIMI_CODE_HOME 'statusline-quota-refresh.lock'

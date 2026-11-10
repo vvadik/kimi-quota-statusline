@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/hero.svg" alt="Kimi Quota Statusline — official 5h and 7d quotas" width="760" />
+<img src="assets/hero.svg" alt="Kimi Quota Statusline — native status and official quotas" width="760" />
 
 <p><a href="README.ru-RU.md"><b>Документация на русском</b></a></p>
 
@@ -8,12 +8,14 @@
 
 # Kimi Quota Statusline
 
-A deliberately minimal [Kimi Code CLI](https://github.com/MoonshotAI/kimi-code) TUI status line: **official 5h and 7d quota bars only**.
+A deliberately minimal [Kimi Code CLI](https://github.com/MoonshotAI/kimi-code) TUI status line: **your native model/context status plus official quota bars**.
 
-- `5h` and `7d`: six cells, actual used percentage, and reset countdown.
+- Preserves `model | ctx | win | used`, for example `K3.1 Pro | ctx:83% left | win:1.0m | used:178.1k`.
+- Appends `5h` and `7d`: six cells, actual used percentage, and reset countdown.
+- If `7d` is unavailable, shows the official monthly total as `mo`. `limit_month_code` is not used for this fallback.
 - One shared cache with a **90-second refresh interval** across all terminals.
 - Refreshes only while a visual Kimi TUI invokes the status line. No TUI means no requests.
-- No background server, recurring loop, hooks, monthly quota, token/cost/TPS, git/cwd, swarm, or task dashboard.
+- No background server, recurring loop, hooks, token/cost/TPS, git/cwd, swarm, or task dashboard.
 - No session transcript, task log, or stdin snapshots are read or persisted.
 
 ## Install

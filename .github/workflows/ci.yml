@@ -26,19 +26,19 @@ jobs:
       - name: Regression tests
         run: python tests/test_regressions.py
 
-      - name: Quota-only smoke render
+      - name: Native status and quota smoke render
         env:
           KIMI_SL_NOCOLOR: '1'
           HOME: ${{ runner.temp }}/home
           KIMI_CODE_HOME: ${{ runner.temp }}/kc
         run: |
           mkdir -p "$HOME" "$KIMI_CODE_HOME"
-          out=$(echo '{"model":"hidden","cwd":"D:/пользователь/проект","gitBranch":"hidden","permissionMode":"auto","sessionId":"","version":"ci"}' | python statusline.py)
+          out=$(echo '{"model":"K3.1 Pro","cwd":"D:/пользователь/проект","gitBranch":"hidden","permissionMode":"auto","sessionId":"","version":"ci"}' | python statusline.py)
           test -n "$out"
+          echo "$out" | grep -q 'K3.1 Pro'
           echo "$out" | grep -q '5h'
           echo "$out" | grep -q '7d'
           ! echo "$out" | grep -q 'hidden'
-          ! echo "$out" | grep -q 'mo'
           echo "$out"
 
       - name: Install/uninstall roundtrip

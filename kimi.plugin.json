@@ -1,14 +1,14 @@
 {
   "name": "kimi-quota-statusline",
-  "version": "2.0.0",
-  "description": "Kimi Code TUI status line with official 5h and 7d quotas only",
+  "version": "2.1.0",
+  "description": "Native Kimi model/context status plus official 5h and 7d quotas, with monthly fallback",
   "keywords": ["statusline", "quota", "usage", "status-bar"],
   "author": "guo",
   "license": "MIT",
   "interface": {
     "displayName": "Kimi Quota Statusline",
-    "shortDescription": "Official 5h and 7d quotas, cached for 90 seconds",
-    "longDescription": "Shows only official 5h and 7d quota bars in the Kimi terminal UI. No hooks, local server, session transcript access, token/cost accounting, or non-TUI requests. A short-lived refresh runs only while the TUI invokes the status line and shares a 90-second cache across terminals."
+    "shortDescription": "Model, context, 5h and 7d quotas with monthly fallback",
+    "longDescription": "Preserves the native model | ctx | win | used status and appends official 5h and 7d quota bars. If 7d is unavailable, shows the monthly total as mo. No hooks, local server, session transcript access, or non-TUI requests. A short-lived refresh runs only while the TUI invokes the status line and shares a 90-second cache across terminals."
   },
   "commands": "./commands/"
 }
