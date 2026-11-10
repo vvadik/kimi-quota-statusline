@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Штатные model/context сегменты Kimi TUI и официальные квоты 5h/7d/mo."""
 
+import glob
 import json
 import math
 import os
@@ -15,6 +16,7 @@ import urllib.parse
 import urllib.request
 
 HOME = os.environ.get('KIMI_CODE_HOME', os.path.expanduser('~/.kimi-code'))
+SESSIONS = os.path.join(HOME, 'sessions')
 CACHE = os.path.join(HOME, 'statusline-quota.json')
 LOCK = os.path.join(HOME, 'statusline-quota-refresh.lock')
 CONFIG_FILE = os.path.join(HOME, 'config.toml')
@@ -30,12 +32,13 @@ STALE_AFTER_S = 600
 LOCK_S = 60
 REQUEST_TIMEOUT_S = 8
 MAX_RESPONSE_BYTES = 1024 * 1024
+TAIL_BYTES = 524288
 OAUTH_KEY_RE = re.compile(r'^oauth/(kimi-code(?:-env-[0-9a-f]{16})?)$')
 CACHE_VERSION = 2
 
 USE_ANSI = os.environ.get('KIMI_SL_NOCOLOR') != '1'
 RESET, BOLD, DIM = '\033[0m', '\033[1m', '\033[2m'
-GREEN, YELLOW, RED = '\033[32m', '\033[33m', '\033[31m'
+GREEN, RED, BLUE = '\033[32m', '\033[31m', '\033[34m'
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -327,17 +330,11 @@ def quota_segment(label, prefix, cache, stale, now):
         ratio = cache[prefix + '_used'] / cache[prefix + '_limit']
         if not math.isfinite(ratio) or ratio < 0:
             return c(label + ' —', DIM)
-    except (KeyError, TypeError, ValueError, ZeroDivisionError):
+    except (KeyError, TypeError, ValueError, ZeroDivisionError, OverflowError):
         return c(label + ' —', DIM)
-    filled = min(6, max(0, round(min(1.0, ratio) * 6)))
-    color = GREEN if ratio < 0.6 else (YELLOW if ratio < 0.85 else RED)
-    percent = str(round(100 * ratio))
-    if stale:
-        segment = c(label + ' ', DIM) + c('█' * filled + '░' * (6 - filled), DIM)
-        segment += ' ' + c('~' + percent + '%', DIM)
-    else:
-        segment = c(label + ' ', DIM) + c('█' * filled, color) + c('░' * (6 - filled), DIM)
-        segment += ' ' + c(percent + '%', color, BOLD)
+    remaining = max(0, round((1.0 - ratio) * 100))
+    marker = '~' if stale else ''
+    segment = c(f'{label} {marker}{remaining}% left', DIM)
     hint = reset_hint(cache.get(prefix + '_reset', ''), now)
     return segment + (c(' ' + hint, DIM) if hint else '')
 
@@ -362,6 +359,91 @@ def render_quota(cache, environment, now=None):
             + quota_segment(label, prefix, cache, stale, now))
 
 
+def session_state(session_id):
+    effort, swarm = '', False
+    if not session_id:
+        return effort, swarm
+    hits = glob.glob(os.path.join(SESSIONS, '*', session_id, 'agents', 'main', 'wire.jsonl'))
+    if not hits:
+        return effort, swarm
+    try:
+        with open(hits[0], 'rb') as f:
+            end = os.path.getsize(hits[0])
+            got_effort = got_swarm = False
+            while end > 0 and not (got_effort and got_swarm):
+                start = max(0, end - TAIL_BYTES)
+                f.seek(start)
+                lines = f.read(end - start).splitlines()
+                if start > 0 and lines:
+                    lines = lines[1:]
+                need_effort = not got_effort
+                need_swarm = not got_swarm
+                for line in lines:
+                    if b'thinkingEffort' in line and need_effort:
+                        try:
+                            record = json.loads(line)
+                        except ValueError:
+                            continue
+                        value = record.get('thinkingEffort')
+                        if not value and isinstance(record.get('event'), dict):
+                            value = record['event'].get('thinkingEffort')
+                        if isinstance(value, str) and value:
+                            effort = value
+                            got_effort = True
+                    elif b'swarm_mode' in line and need_swarm:
+                        try:
+                            record = json.loads(line)
+                        except ValueError:
+                            continue
+                        kind = record.get('type')
+                        if kind == 'swarm_mode.enter':
+                            swarm = True
+                            got_swarm = True
+                        elif kind == 'swarm_mode.exit':
+                            swarm = False
+                            got_swarm = True
+                end = start
+    except OSError:
+        pass
+    return effort, swarm
+
+
+def _pid_alive(pid):
+    if os.name == 'nt':
+        return True
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, TypeError, ValueError, OverflowError):
+        return False
+
+
+def running_task_count(session_id):
+    if not session_id:
+        return 0
+    count = 0
+    pattern = os.path.join(SESSIONS, '*', session_id, 'agents', 'main', 'tasks', '*.json')
+    for path in glob.glob(pattern):
+        try:
+            with open(path, encoding='utf-8', errors='replace') as f:
+                task = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(task, dict) or task.get('status') != 'running':
+            continue
+        if task.get('kind') == 'process' and task.get('pid') and not _pid_alive(task['pid']):
+            continue
+        if task.get('kind') != 'process':
+            wire = os.path.join(os.path.dirname(os.path.dirname(path)), 'wire.jsonl')
+            try:
+                if time.time() - os.stat(wire).st_mtime > 120:
+                    continue
+            except OSError:
+                continue
+        count += 1
+    return count
+
+
 def finite_number(value):
     if isinstance(value, bool):
         return None
@@ -372,12 +454,31 @@ def finite_number(value):
     return number if math.isfinite(number) else None
 
 
-def render_snapshot(snapshot):
+def safe_text(value, limit=80):
+    text = re.sub(r'\x1b\][^\x07]*(?:\x07|\x1b\\)', '', str(value))
+    text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text)
+    text = ''.join(ch for ch in text if ch.isprintable())
+    return text[:limit]
+
+
+def render_snapshot(snapshot, effort='', swarm=False, tasks=0):
+    parts = []
+    mode = snapshot.get('permissionMode') or snapshot.get('permission_mode')
+    if mode:
+        mode = str(mode)
+        style = DIM if mode == 'manual' else (GREEN if mode == 'yolo' else RED)
+        parts.append(c(mode.upper(), style, DIM if mode == 'manual' else BOLD))
+    if snapshot.get('planMode') or snapshot.get('plan_mode'):
+        parts.append(c('plan', BLUE, BOLD))
     model = snapshot.get('model') or 'unknown'
     if isinstance(model, dict):
         model = model.get('alias') or model.get('id') or model.get('name') or 'unknown'
-    model = ''.join(ch for ch in str(model) if ch.isprintable())[:80] or 'unknown'
-    parts = [model]
+    model = safe_text(model) or 'unknown'
+    if effort:
+        model += '·' + safe_text(effort, 20)
+    parts.append(model)
+    if swarm:
+        parts.append(c('swarm', BLUE, BOLD))
     max_tokens = finite_number(snapshot.get('maxContextTokens'))
     used_tokens = finite_number(snapshot.get('contextTokens'))
     usage = finite_number(snapshot.get('contextUsage'))
@@ -388,21 +489,29 @@ def render_snapshot(snapshot):
         remaining = 100 - usage * 100
     if remaining is not None:
         parts.append(f'ctx:{remaining:.0f}% left')
-    if max_tokens is not None and max_tokens > 0:
-        if max_tokens >= 1000000:
-            parts.append(f'win:{max_tokens / 1000000:.1f}m')
-        else:
-            parts.append(f'win:{max_tokens / 1000:.0f}k')
     if used_tokens is not None and used_tokens > 0:
         if used_tokens >= 1000:
             parts.append(f'used:{used_tokens / 1000:.1f}k')
         else:
             parts.append(f'used:{int(used_tokens)}')
+    parts.append(c(f'⚙ {tasks}', GREEN if tasks else DIM))
+    cwd = snapshot.get('cwd') or snapshot.get('work_dir') or snapshot.get('workDir')
+    if cwd:
+        cwd = str(cwd)
+        if cwd == os.path.expanduser('~'):
+            directory = '~'
+        else:
+            directory = os.path.basename(cwd.rstrip('/')) or cwd
+        directory = safe_text(directory, 21)
+        if len(directory) > 20:
+            directory = directory[:19] + '…'
+        if directory:
+            parts.append(directory)
     return ' | '.join(parts)
 
 
-def render_status(cache, environment, snapshot, now=None):
-    native = render_snapshot(snapshot)
+def render_status(cache, environment, snapshot, effort='', swarm=False, tasks=0, now=None):
+    native = render_snapshot(snapshot, effort, swarm, tasks)
     return native + ' | ' + render_quota(cache, environment, now)
 
 
@@ -422,7 +531,10 @@ def main():
     environment = resolve_environment()
     cache = read_cache()
     maybe_refresh(cache, environment, str(snapshot.get('version') or ''))
-    print(render_status(cache, environment, snapshot))
+    session_id = snapshot.get('sessionId') or snapshot.get('session_id') or ''
+    effort, swarm = session_state(session_id)
+    tasks = running_task_count(session_id)
+    print(render_status(cache, environment, snapshot, effort, swarm, tasks))
 
 
 if __name__ == '__main__':

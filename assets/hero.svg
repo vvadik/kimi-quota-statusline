@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 240" role="img" aria-label="Kimi Quota Statusline — native status and quotas">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 240" role="img" aria-label="Kimi Quota Statusline — native status and remaining quotas">
   <defs>
     <linearGradient id="wordmark" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#2f7fff"/>
@@ -8,7 +8,7 @@
   </defs>
   <rect width="880" height="240" fill="#0d1117"/>
   <text x="440" y="52" text-anchor="middle" font-family="monospace" font-size="14" letter-spacing="5" fill="#8b949e">KIMI QUOTA STATUSLINE</text>
-  <text x="440" y="120" text-anchor="middle" font-family="sans-serif" font-size="52" font-weight="800" fill="url(#wordmark)">model + 5h / 7d / mo</text>
-  <text x="440" y="170" text-anchor="middle" font-family="sans-serif" font-size="22" fill="#c9d1d9">Native context preserved · 90-second shared cache</text>
-  <text x="440" y="205" text-anchor="middle" font-family="monospace" font-size="16" fill="#8b949e">No server · No hooks · Active TUI only</text>
+  <text x="440" y="120" text-anchor="middle" font-family="sans-serif" font-size="48" font-weight="800" fill="url(#wordmark)">model + tasks + quotas left</text>
+  <text x="440" y="170" text-anchor="middle" font-family="sans-serif" font-size="22" fill="#c9d1d9">Permission · Effort · Swarm · Remaining quota</text>
+  <text x="440" y="205" text-anchor="middle" font-family="monospace" font-size="16" fill="#8b949e">Native /tasks · No server · Active TUI only</text>
 </svg>

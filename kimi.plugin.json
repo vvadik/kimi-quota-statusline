@@ -1,14 +1,14 @@
 {
   "name": "kimi-quota-statusline",
-  "version": "2.1.0",
-  "description": "Native Kimi model/context status plus official 5h and 7d quotas, with monthly fallback",
-  "keywords": ["statusline", "quota", "usage", "status-bar"],
+  "version": "2.2.0",
+  "description": "Native Kimi status with permission, effort, swarm, tasks and remaining quotas",
+  "keywords": ["statusline", "quota", "usage", "status-bar", "tasks"],
   "author": "guo",
   "license": "MIT",
   "interface": {
     "displayName": "Kimi Quota Statusline",
-    "shortDescription": "Model, context, 5h and 7d quotas with monthly fallback",
-    "longDescription": "Preserves the native model | ctx | win | used status and appends official 5h and 7d quota bars. If 7d is unavailable, shows the monthly total as mo. No hooks, local server, session transcript access, or non-TUI requests. A short-lived refresh runs only while the TUI invokes the status line and shares a 90-second cache across terminals."
+    "shortDescription": "Permission, model, effort, swarm, tasks and remaining quotas",
+    "longDescription": "Shows permission and plan modes, model and effort, swarm, context, a background task marker and current directory, followed by remaining 5h and 7d quotas. Uses mo when 7d is unavailable. No hooks, HTML server, task output access, or non-TUI requests. Task details are available through Kimi's native /tasks panel."
   },
   "commands": "./commands/"
 }

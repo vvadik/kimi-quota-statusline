@@ -127,10 +127,10 @@ class QuotaParsingTests(StatuslineCase):
         self.assertIsNone(statusline.parse_quota({'usages': {'limit_month_code': {'used_ratio': 0.5}}}))
         self.assertIsNone(statusline.parse_quota([]))
 
-    def test_overuse_keeps_actual_percentage(self):
+    def test_overuse_clamps_remaining_to_zero(self):
         cache = self.cache(h5_used=1.2, h5_limit=1.0)
         rendered = statusline.render_quota(cache, self.env)
-        self.assertIn('120%', rendered)
+        self.assertIn('0% left', rendered)
 
 
 class RenderTests(StatuslineCase):
@@ -139,18 +139,18 @@ class RenderTests(StatuslineCase):
                            h5_reset='2099-01-01T00:00:00Z', mo_used=0.9, mo_limit=1)
         rendered = statusline.render_quota(cache, self.env)
         self.assertIn('5h', rendered)
-        self.assertIn('15%', rendered)
+        self.assertIn('85% left', rendered)
         self.assertIn('7d', rendered)
-        self.assertIn('80%', rendered)
+        self.assertIn('20% left', rendered)
         self.assertNotIn('mo', rendered)
-        self.assertNotIn('90%', rendered)
+        self.assertNotIn('90% left', rendered)
         self.assertNotIn('git', rendered)
 
     def test_monthly_is_fallback_when_weekly_is_missing(self):
         cache = self.cache(h5_used=0.15, h5_limit=1, mo_used=0.1002, mo_limit=1)
         rendered = statusline.render_quota(cache, self.env)
         self.assertIn('mo', rendered)
-        self.assertIn('10%', rendered)
+        self.assertIn('90% left', rendered)
         self.assertNotIn('7d', rendered)
 
     def test_placeholders_and_environment_isolation(self):
@@ -162,7 +162,7 @@ class RenderTests(StatuslineCase):
 
     def test_stale_marker(self):
         cache = self.cache(fetched_at=time.time() - 601, h5_used=0.5, h5_limit=1)
-        self.assertIn('~50%', statusline.render_quota(cache, self.env))
+        self.assertIn('~50% left', statusline.render_quota(cache, self.env))
 
     def test_reset_hint(self):
         now = int(time.time())
@@ -173,7 +173,40 @@ class RenderTests(StatuslineCase):
     def test_native_snapshot_format(self):
         snapshot = {'model': 'K3.1 Pro', 'contextTokens': 178100, 'maxContextTokens': 1048576}
         self.assertEqual(statusline.render_snapshot(snapshot),
-                         'K3.1 Pro | ctx:83% left | win:1.0m | used:178.1k')
+                         'K3.1 Pro | ctx:83% left | used:178.1k | ⚙ 0')
+
+    def test_modes_effort_swarm_tasks_and_cwd(self):
+        snapshot = {'model': 'K3.1 Pro', 'permissionMode': 'auto', 'planMode': True,
+                    'cwd': '/tmp/project'}
+        rendered = statusline.render_snapshot(snapshot, effort='max', swarm=True, tasks=2)
+        for expected in ('AUTO', 'plan', 'K3.1 Pro·max', 'swarm', '⚙ 2', 'project'):
+            self.assertIn(expected, rendered)
+        self.assertNotIn('win:', rendered)
+
+    def test_permission_colors_match_risk(self):
+        statusline.USE_ANSI = True
+        self.assertIn('\033[31m\033[1mAUTO', statusline.render_snapshot({'permissionMode': 'auto'}))
+        self.assertIn('\033[32m\033[1mYOLO', statusline.render_snapshot({'permissionMode': 'yolo'}))
+        self.assertIn('\033[2m\033[2mMANUAL', statusline.render_snapshot({'permissionMode': 'manual'}))
+
+    def test_session_state_and_running_tasks(self):
+        sessions = os.path.join(self.root, 'sessions')
+        main_dir = os.path.join(sessions, 'wd_test', 'sid', 'agents', 'main')
+        tasks_dir = os.path.join(main_dir, 'tasks')
+        os.makedirs(tasks_dir)
+        statusline.SESSIONS = sessions
+        with open(os.path.join(main_dir, 'wire.jsonl'), 'w') as f:
+            f.write('{"thinkingEffort":"max"}\n{"type":"swarm_mode.enter"}\n')
+        with open(os.path.join(tasks_dir, 'one.json'), 'w') as f:
+            json.dump({'status': 'running', 'kind': 'process', 'pid': os.getpid()}, f)
+        self.assertEqual(statusline.session_state('sid'), ('max', True))
+        self.assertEqual(statusline.running_task_count('sid'), 1)
+        with open(os.path.join(main_dir, 'wire.jsonl'), 'a') as f:
+            f.write('{"type":"swarm_mode.exit"}\n')
+        self.assertEqual(statusline.session_state('sid'), ('max', False))
+        with open(os.path.join(tasks_dir, 'one.json'), 'w') as f:
+            json.dump({'status': 'completed', 'kind': 'process'}, f)
+        self.assertEqual(statusline.running_task_count('sid'), 0)
 
     def test_main_preserves_native_segments_without_persisting_stdin(self):
         old_stdin = sys.stdin
@@ -188,7 +221,7 @@ class RenderTests(StatuslineCase):
         finally:
             sys.stdin = old_stdin
             statusline.maybe_refresh = old_refresh
-        self.assertEqual(output.getvalue().strip(), 'K3.1 Pro | 5h — | 7d —')
+        self.assertEqual(output.getvalue().strip(), 'K3.1 Pro | ⚙ 0 | 5h — | 7d —')
         self.assertNotIn('main', output.getvalue())
         self.assertNotIn(']52', output.getvalue())
         self.assertFalse(os.path.exists(os.path.join(statusline.HOME, 'statusline-stdin.json')))
@@ -428,7 +461,7 @@ class InstallerTests(unittest.TestCase):
         path = os.path.join(os.path.dirname(__file__), '..', 'kimi.plugin.json')
         with open(path, encoding='utf-8') as f:
             manifest = json.load(f)
-        self.assertEqual(manifest['version'], '2.1.0')
+        self.assertEqual(manifest['version'], '2.2.0')
         self.assertNotIn('hooks', manifest)
 
 
