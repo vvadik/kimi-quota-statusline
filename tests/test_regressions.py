@@ -376,6 +376,7 @@ class CacheAndActivityTests(StatuslineCase):
 
 
 class InstallerTests(unittest.TestCase):
+    @unittest.skipIf(os.name == 'nt', 'Проверка относится только к POSIX sh')
     def test_posix_shell_metacharacters_are_inert(self):
         with tempfile.TemporaryDirectory() as root:
             canary = os.path.join(root, 'SHELL_COMMAND_RAN')
